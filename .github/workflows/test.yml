@@ -40,4 +40,6 @@ jobs:
       - name: Run Forge tests
         run: |
           forge test -vvv
+        env:
+          RPC_URL_ARBITRUM: ${{ secrets.RPC_URL_ARBITRUM }}
         id: test

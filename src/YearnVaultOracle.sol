@@ -1,0 +1,139 @@
+// SPDX-License-Identifier: GPL-2.0-or-later
+pragma solidity ^0.8.30;
+
+import { IPriceOracle } from "./interfaces/IPriceOracle.sol";
+import { IYearnVault } from "./interfaces/IYearnVault.sol";
+import { ScaleUtils, Scale } from "./utils/ScaleUtils.sol";
+import { Errors } from "./utils/Errors.sol";
+
+/// @title YearnVaultOracle
+/// @author AlphaGrowth (https://alphagrowth.io)
+/// @notice Direct price oracle adapter for Yearn vault tokens with fixed-rate underlying assets
+/// @dev Uses vault's pricePerShare directly without additional translation for assets pegged to USD
+contract YearnVaultOracle is IPriceOracle {
+    /// @notice The minimum permitted value for maxStaleness
+    uint256 internal constant MAX_STALENESS_LOWER_BOUND = 1 minutes;
+    /// @notice The maximum permitted value for maxStaleness
+    uint256 internal constant MAX_STALENESS_UPPER_BOUND = 26 hours;
+
+    /// @inheritdoc IPriceOracle
+    string public name;
+
+    /// @notice The address of the Yearn vault token
+    address public immutable vault;
+    /// @notice The address of the underlying asset token
+    address public immutable asset;
+    /// @notice The address representing USD in the system
+    address public immutable usd;
+    /// @notice The Yearn vault contract interface
+    IYearnVault public immutable yearnVault;
+    /// @notice The scale for decimal conversions
+    Scale public immutable scale;
+    /// @notice The maximum allowed age of the oracle price
+    uint256 public immutable maxStaleness;
+
+    /// @notice Deploy a YearnVaultOracle
+    /// @param _vault The address of the Yearn vault token
+    /// @param _asset The underlying asset of the vault (should be pegged to USD)
+    /// @param _usd The address representing USD
+    /// @param _maxStaleness The maximum allowed age for price data in seconds
+    constructor(address _vault, address _asset, address _usd, uint256 _maxStaleness) {
+        // Validate configuration
+        if (_maxStaleness < MAX_STALENESS_LOWER_BOUND || _maxStaleness > MAX_STALENESS_UPPER_BOUND) {
+            revert Errors.PriceOracle_InvalidConfiguration();
+        }
+        if (_vault == address(0) || _asset == address(0) || _usd == address(0)) {
+            revert Errors.PriceOracle_InvalidConfiguration();
+        }
+
+        // Set immutable state
+        vault = _vault;
+        asset = _asset;
+        usd = _usd;
+        yearnVault = IYearnVault(_vault);
+        maxStaleness = _maxStaleness;
+
+        // Get decimals for all tokens
+        uint8 vaultDecimals = _getDecimals(_vault);
+        uint8 assetDecimals = _getDecimals(_asset);
+        uint8 usdDecimals = _getDecimals(_usd);
+
+        // pricePerShare returns the amount of asset tokens per vault token
+        // Since asset (USND) is 1:1 with USD, pricePerShare directly gives us the USD value
+        // The scale should convert between vault decimals and USD decimals, with pricePerShare in asset decimals
+        scale = ScaleUtils.calcScale(vaultDecimals, usdDecimals, assetDecimals);
+
+        // Set the oracle name
+        string memory vaultSymbol = _getSymbol(_vault);
+        name = string(abi.encodePacked("YearnVaultOracle ", vaultSymbol, "/USD"));
+    }
+
+    /// @inheritdoc IPriceOracle
+    /// @notice Get the price quote for converting between vault and USD
+    /// @dev Supports both vault/USD and USD/vault conversions. Assumes underlying asset is 1:1 with USD
+    function getQuote(uint256 inAmount, address base, address quote) external view returns (uint256) {
+        // Determine direction
+        bool inverse = ScaleUtils.getDirectionOrRevert(base, vault, quote, usd);
+
+        // Get the price per share from the Yearn vault
+        uint256 pricePerShare = yearnVault.pricePerShare();
+        if (pricePerShare == 0) revert Errors.PriceOracle_InvalidAnswer();
+
+        // Direct calculation without asset oracle translation
+        // Since the underlying asset is pegged 1:1 to USD, we can directly use pricePerShare
+        return ScaleUtils.calcOutAmount(inAmount, pricePerShare, scale, inverse);
+    }
+
+    /// @inheritdoc IPriceOracle
+    /// @notice Get bid and ask prices for a given amount
+    /// @dev For Yearn vaults, bid and ask prices are the same (no spread)
+    function getQuotes(
+        uint256 inAmount,
+        address base,
+        address quote
+    )
+        external
+        view
+        returns (uint256 bidOutAmount, uint256 askOutAmount)
+    {
+        // For Yearn vaults, there's no spread - bid and ask are the same
+        uint256 outAmount = this.getQuote(inAmount, base, quote);
+        return (outAmount, outAmount);
+    }
+
+    /// @notice Helper to get token decimals
+    /// @param token The token address
+    /// @return decimals The token decimals
+    function _getDecimals(address token) private view returns (uint8 decimals) {
+        // For USD special address, return 18 decimals
+        if (token == address(0x0000000000000000000000000000000000000348)) {
+            return 18;
+        }
+
+        // Try to call decimals() on the token
+        try IYearnVault(token).decimals() returns (uint8 dec) {
+            return dec;
+        } catch {
+            // If decimals() doesn't exist or fails, try standard ERC20 interface
+            (bool success, bytes memory data) = token.staticcall(abi.encodeWithSignature("decimals()"));
+            if (success && data.length == 32) {
+                return abi.decode(data, (uint8));
+            }
+            // Default to 18 decimals if call fails (common for many tokens)
+            return 18;
+        }
+    }
+
+    /// @notice Helper to get token symbol
+    /// @param token The token address
+    /// @return symbol The token symbol
+    function _getSymbol(address token) private view returns (string memory symbol) {
+        // Try to call symbol() on the token
+        (bool success, bytes memory data) = token.staticcall(abi.encodeWithSignature("symbol()"));
+        if (success && data.length > 0) {
+            return abi.decode(data, (string));
+        }
+        // Return a default if symbol() fails
+        return "VAULT";
+    }
+}
