@@ -10,6 +10,7 @@ out/
 # Docs
 docs/
 CLAUDE.md
+PR_IMPLEMENTATION_PLAN.md
 
 # Dotenv file
 .env
