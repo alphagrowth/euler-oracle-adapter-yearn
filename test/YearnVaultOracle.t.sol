@@ -114,6 +114,51 @@ contract MockVaultNoAssetMethod {
     }
 }
 
+contract MaliciousHugeSymbol {
+    function decimals() external pure returns (uint8) {
+        return 18;
+    }
+
+    function pricePerShare() external pure returns (uint256) {
+        return 1e18;
+    }
+
+    function symbol() external pure returns (bytes memory) {
+        // Return huge data (1MB) to try to DOS
+        bytes memory huge = new bytes(1_000_000);
+        return huge;
+    }
+}
+
+contract MaliciousLongString {
+    function decimals() external pure returns (uint8) {
+        return 18;
+    }
+
+    function pricePerShare() external pure returns (uint256) {
+        return 1e18;
+    }
+
+    function symbol() external pure returns (string memory) {
+        // Return 100-character string (exceeds 32 char limit)
+        return "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA";
+    }
+}
+
+contract MaliciousBrokenSymbol {
+    function decimals() external pure returns (uint8) {
+        return 18;
+    }
+
+    function pricePerShare() external pure returns (uint256) {
+        return 1e18;
+    }
+
+    function symbol() external pure returns (string memory) {
+        revert("Symbol not implemented");
+    }
+}
+
 contract YearnVaultOracleTest is Test {
     YearnVaultOracle public oracle;
     MockYearnVault public vault;
@@ -228,6 +273,39 @@ contract YearnVaultOracleTest is Test {
         // Should revert when cannot verify asset
         vm.expectRevert(Errors.PriceOracle_CannotVerifyAsset.selector);
         new YearnVaultOracle(address(vaultNoAsset), address(asset), USD);
+    }
+
+    function test_Constructor_MaliciousHugeSymbol() public {
+        // Create malicious vault that returns 1MB of data for symbol()
+        MaliciousHugeSymbol malicious = new MaliciousHugeSymbol();
+
+        // Should not revert, should use default "VAULT" symbol
+        YearnVaultOracle newOracle = new YearnVaultOracle(address(malicious), address(asset), USD);
+
+        // Verify it used the default symbol
+        assertEq(newOracle.name(), "YearnVaultOracle VAULT/USD");
+    }
+
+    function test_Constructor_MaliciousLongString() public {
+        // Create malicious vault that returns 100-char string (exceeds 32 limit)
+        MaliciousLongString malicious = new MaliciousLongString();
+
+        // Should not revert, should use default "VAULT" symbol
+        YearnVaultOracle newOracle = new YearnVaultOracle(address(malicious), address(asset), USD);
+
+        // Verify it used the default symbol
+        assertEq(newOracle.name(), "YearnVaultOracle VAULT/USD");
+    }
+
+    function test_Constructor_BrokenSymbol() public {
+        // Create vault with broken symbol() that reverts
+        MaliciousBrokenSymbol malicious = new MaliciousBrokenSymbol();
+
+        // Should not revert, should use default "VAULT" symbol
+        YearnVaultOracle newOracle = new YearnVaultOracle(address(malicious), address(asset), USD);
+
+        // Verify it used the default symbol
+        assertEq(newOracle.name(), "YearnVaultOracle VAULT/USD");
     }
 
     function test_GetQuote_VaultToUSD() public {

@@ -149,10 +149,29 @@ contract YearnVaultOracle is IPriceOracle {
     function _getSymbol(address token) private view returns (string memory symbol) {
         // Try to call symbol() on the token
         (bool success, bytes memory data) = token.staticcall(abi.encodeWithSignature("symbol()"));
-        if (success && data.length > 0) {
-            return abi.decode(data, (string));
+
+        // Validate response - max 128 bytes to prevent DOS from huge responses
+        if (success && data.length > 0 && data.length <= 128) {
+            try this._safeDecodeString(data) returns (string memory sym) {
+                // Additional validation: check decoded string length (max 32 chars)
+                // This prevents malicious contracts from returning extremely long strings
+                if (bytes(sym).length > 0 && bytes(sym).length <= 32) {
+                    return sym;
+                }
+            } catch {
+                // Decode failed, fall through to default
+            }
         }
-        // Return a default if symbol() fails
+
+        // Return default if symbol() fails or is invalid
         return "VAULT";
+    }
+
+    /// @notice Helper to safely decode string from bytes
+    /// @dev Public function to allow try/catch usage in _getSymbol
+    /// @param data The bytes data to decode
+    /// @return The decoded string
+    function _safeDecodeString(bytes memory data) public pure returns (string memory) {
+        return abi.decode(data, (string));
     }
 }
