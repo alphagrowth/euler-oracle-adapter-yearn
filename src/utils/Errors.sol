@@ -30,4 +30,12 @@ library Errors {
     /// @notice Thrown when trying to get decimals from a token that doesn't support it
     /// @param token The token address that doesn't support decimals
     error PriceOracle_DecimalsNotSupported(address token);
+
+    /// @notice Thrown when vault's underlying asset doesn't match the provided asset
+    /// @param vaultAsset The asset returned by the vault
+    /// @param providedAsset The asset address provided to constructor
+    error PriceOracle_VaultAssetMismatch(address vaultAsset, address providedAsset);
+
+    /// @notice Thrown when cannot verify vault's underlying asset
+    error PriceOracle_CannotVerifyAsset();
 }

@@ -37,6 +37,26 @@ contract YearnVaultOracle is IPriceOracle {
             revert Errors.PriceOracle_InvalidConfiguration();
         }
 
+        // Verify vault's underlying asset matches provided asset
+        // This prevents misconfiguration where wrong asset is specified
+        try IYearnVault(_vault).token() returns (address vaultAsset) {
+            if (vaultAsset != _asset) {
+                revert Errors.PriceOracle_VaultAssetMismatch(vaultAsset, _asset);
+            }
+        } catch {
+            // If vault doesn't have token(), try asset() method (ERC4626 style)
+            (bool success, bytes memory data) = _vault.staticcall(abi.encodeWithSignature("asset()"));
+            if (success && data.length == 32) {
+                address vaultAsset = abi.decode(data, (address));
+                if (vaultAsset != _asset) {
+                    revert Errors.PriceOracle_VaultAssetMismatch(vaultAsset, _asset);
+                }
+            } else {
+                // Cannot verify vault's asset - safer to revert than proceed with potentially wrong configuration
+                revert Errors.PriceOracle_CannotVerifyAsset();
+            }
+        }
+
         // Set immutable state
         vault = _vault;
         asset = _asset;

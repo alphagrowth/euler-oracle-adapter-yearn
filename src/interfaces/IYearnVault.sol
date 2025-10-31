@@ -12,4 +12,8 @@ interface IYearnVault {
     /// @notice Returns the number of decimals the vault token uses
     /// @return The number of decimals (typically 18 for most Yearn vaults)
     function decimals() external view returns (uint8);
+
+    /// @notice Returns the underlying token address (for Yearn V2 vaults)
+    /// @return The address of the underlying token
+    function token() external view returns (address);
 }
