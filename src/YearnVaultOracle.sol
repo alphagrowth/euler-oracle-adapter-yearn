@@ -102,15 +102,24 @@ contract YearnVaultOracle is IPriceOracle {
 
         // Try to call decimals() on the token
         try IYearnVault(token).decimals() returns (uint8 dec) {
+            // Validate decimals are in reasonable range (0 is invalid, 77 is max for 10**decimals to fit in uint256)
+            if (dec == 0 || dec > 77) {
+                revert Errors.PriceOracle_DecimalsNotSupported(token);
+            }
             return dec;
         } catch {
             // If decimals() doesn't exist or fails, try standard ERC20 interface
             (bool success, bytes memory data) = token.staticcall(abi.encodeWithSignature("decimals()"));
             if (success && data.length == 32) {
-                return abi.decode(data, (uint8));
+                uint8 dec = abi.decode(data, (uint8));
+                // Validate decimals are in reasonable range
+                if (dec > 0 && dec <= 77) {
+                    return dec;
+                }
             }
-            // Default to 18 decimals if call fails (common for many tokens)
-            return 18;
+            // REVERT instead of defaulting to prevent catastrophic miscalculation
+            // A 6-decimal token (like USDC) defaulted to 18 would be valued 10^12 times higher
+            revert Errors.PriceOracle_DecimalsNotSupported(token);
         }
     }
 

@@ -35,6 +35,42 @@ contract MockToken {
     }
 }
 
+contract MockBrokenDecimals {
+    function decimals() external pure returns (uint8) {
+        revert("Not implemented");
+    }
+    function pricePerShare() external pure returns (uint256) {
+        return 1e18;
+    }
+    function symbol() external pure returns (string memory) {
+        return "BROKEN";
+    }
+}
+
+contract MockZeroDecimals is IYearnVault {
+    function decimals() external pure returns (uint8) {
+        return 0;
+    }
+    function pricePerShare() external pure returns (uint256) {
+        return 1e18;
+    }
+    function symbol() external pure returns (string memory) {
+        return "ZERO";
+    }
+}
+
+contract MockExcessiveDecimals is IYearnVault {
+    function decimals() external pure returns (uint8) {
+        return 78; // Above max of 77
+    }
+    function pricePerShare() external pure returns (uint256) {
+        return 1e18;
+    }
+    function symbol() external pure returns (string memory) {
+        return "EXCESSIVE";
+    }
+}
+
 contract YearnVaultOracleTest is Test {
     YearnVaultOracle public oracle;
     MockYearnVault public vault;
@@ -71,6 +107,36 @@ contract YearnVaultOracleTest is Test {
         // Test zero USD
         vm.expectRevert(Errors.PriceOracle_InvalidConfiguration.selector);
         new YearnVaultOracle(address(vault), address(asset), address(0));
+    }
+
+    function test_Constructor_RevertBrokenDecimals() public {
+        MockBrokenDecimals broken = new MockBrokenDecimals();
+        vm.expectRevert(abi.encodeWithSelector(Errors.PriceOracle_DecimalsNotSupported.selector, address(broken)));
+        new YearnVaultOracle(address(broken), address(asset), USD);
+    }
+
+    function test_Constructor_RevertZeroDecimals() public {
+        MockZeroDecimals zeroDecimals = new MockZeroDecimals();
+        vm.expectRevert(
+            abi.encodeWithSelector(Errors.PriceOracle_DecimalsNotSupported.selector, address(zeroDecimals))
+        );
+        new YearnVaultOracle(address(zeroDecimals), address(asset), USD);
+    }
+
+    function test_Constructor_RevertExcessiveDecimals() public {
+        MockExcessiveDecimals excessiveDecimals = new MockExcessiveDecimals();
+        vm.expectRevert(
+            abi.encodeWithSelector(Errors.PriceOracle_DecimalsNotSupported.selector, address(excessiveDecimals))
+        );
+        new YearnVaultOracle(address(excessiveDecimals), address(asset), USD);
+    }
+
+    function test_Constructor_RevertAssetBrokenDecimals() public {
+        MockBrokenDecimals brokenAsset = new MockBrokenDecimals();
+        vm.expectRevert(
+            abi.encodeWithSelector(Errors.PriceOracle_DecimalsNotSupported.selector, address(brokenAsset))
+        );
+        new YearnVaultOracle(address(vault), address(brokenAsset), USD);
     }
 
     function test_GetQuote_VaultToUSD() public {
