@@ -10,6 +10,7 @@ import { Errors } from "../src/utils/Errors.sol";
 contract MockYearnVault is IYearnVault {
     uint256 public pricePerShare;
     uint8 public decimals;
+    address public underlyingAsset;
 
     constructor(uint256 _pricePerShare, uint8 _decimals) {
         pricePerShare = _pricePerShare;
@@ -18,6 +19,14 @@ contract MockYearnVault is IYearnVault {
 
     function setPricePerShare(uint256 _pricePerShare) external {
         pricePerShare = _pricePerShare;
+    }
+
+    function setUnderlyingAsset(address _asset) external {
+        underlyingAsset = _asset;
+    }
+
+    function token() external view returns (address) {
+        return underlyingAsset;
     }
 
     function symbol() external pure returns (string memory) {
@@ -35,6 +44,121 @@ contract MockToken {
     }
 }
 
+contract MockBrokenDecimals {
+    function decimals() external pure returns (uint8) {
+        revert("Not implemented");
+    }
+    function pricePerShare() external pure returns (uint256) {
+        return 1e18;
+    }
+    function symbol() external pure returns (string memory) {
+        return "BROKEN";
+    }
+}
+
+contract MockZeroDecimals is IYearnVault {
+    function decimals() external pure returns (uint8) {
+        return 0;
+    }
+    function pricePerShare() external pure returns (uint256) {
+        return 1e18;
+    }
+    function symbol() external pure returns (string memory) {
+        return "ZERO";
+    }
+}
+
+contract MockExcessiveDecimals is IYearnVault {
+    function decimals() external pure returns (uint8) {
+        return 78; // Above max of 77
+    }
+    function pricePerShare() external pure returns (uint256) {
+        return 1e18;
+    }
+    function symbol() external pure returns (string memory) {
+        return "EXCESSIVE";
+    }
+}
+
+contract MockERC4626Vault {
+    uint256 public pricePerShare;
+    uint8 public decimals;
+    address public underlyingAsset;
+
+    constructor(uint256 _pricePerShare, uint8 _decimals, address _asset) {
+        pricePerShare = _pricePerShare;
+        decimals = _decimals;
+        underlyingAsset = _asset;
+    }
+
+    function asset() external view returns (address) {
+        return underlyingAsset;
+    }
+
+    function symbol() external pure returns (string memory) {
+        return "vTEST";
+    }
+}
+
+contract MockVaultNoAssetMethod {
+    uint256 public pricePerShare;
+    uint8 public decimals;
+
+    constructor(uint256 _pricePerShare, uint8 _decimals) {
+        pricePerShare = _pricePerShare;
+        decimals = _decimals;
+    }
+
+    function symbol() external pure returns (string memory) {
+        return "nTEST";
+    }
+}
+
+contract MaliciousHugeSymbol {
+    function decimals() external pure returns (uint8) {
+        return 18;
+    }
+
+    function pricePerShare() external pure returns (uint256) {
+        return 1e18;
+    }
+
+    function symbol() external pure returns (bytes memory) {
+        // Return huge data (1MB) to try to DOS
+        bytes memory huge = new bytes(1_000_000);
+        return huge;
+    }
+}
+
+contract MaliciousLongString {
+    function decimals() external pure returns (uint8) {
+        return 18;
+    }
+
+    function pricePerShare() external pure returns (uint256) {
+        return 1e18;
+    }
+
+    function symbol() external pure returns (string memory) {
+        // Return 100-character string (exceeds 32 char limit)
+        return "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA";
+    }
+}
+
+contract MaliciousBrokenSymbol {
+    function decimals() external pure returns (uint8) {
+        return 18;
+    }
+
+    function pricePerShare() external pure returns (uint256) {
+        return 1e18;
+    }
+
+    function symbol() external pure returns (string memory) {
+        revert("Symbol not implemented");
+    }
+}
+
 contract YearnVaultOracleTest is Test {
     YearnVaultOracle public oracle;
     MockYearnVault public vault;
@@ -42,57 +166,146 @@ contract YearnVaultOracleTest is Test {
 
     address constant MOCK_ASSET = address(0x1111);
     address constant USD = 0x0000000000000000000000000000000000000348;
-    uint256 constant MAX_STALENESS = 24 hours;
 
     function setUp() public {
         // Deploy mock contracts
         vault = new MockYearnVault(1e18, 18); // 1:1 initial price, 18 decimals
         asset = new MockToken(18); // 18 decimals for asset
 
+        // Set vault's underlying asset to match
+        vault.setUnderlyingAsset(address(asset));
+
         // Deploy the oracle using the actual asset contract address
-        oracle = new YearnVaultOracle(address(vault), address(asset), USD, MAX_STALENESS);
+        oracle = new YearnVaultOracle(address(vault), address(asset), USD);
     }
 
     function test_Constructor() public view {
         assertEq(oracle.vault(), address(vault));
         assertEq(oracle.asset(), address(asset));
         assertEq(oracle.usd(), USD);
-        assertEq(oracle.maxStaleness(), MAX_STALENESS);
         assertEq(oracle.name(), "YearnVaultOracle yTEST/USD");
-    }
-
-    function test_Constructor_RevertInvalidStaleness() public {
-        // Test staleness too low
-        vm.expectRevert(Errors.PriceOracle_InvalidConfiguration.selector);
-        new YearnVaultOracle(
-            address(vault),
-            address(asset),
-            USD,
-            30 seconds // Below minimum
-        );
-
-        // Test staleness too high
-        vm.expectRevert(Errors.PriceOracle_InvalidConfiguration.selector);
-        new YearnVaultOracle(
-            address(vault),
-            address(asset),
-            USD,
-            27 hours // Above maximum
-        );
     }
 
     function test_Constructor_RevertZeroAddress() public {
         // Test zero vault
         vm.expectRevert(Errors.PriceOracle_InvalidConfiguration.selector);
-        new YearnVaultOracle(address(0), address(asset), USD, MAX_STALENESS);
+        new YearnVaultOracle(address(0), address(asset), USD);
 
         // Test zero asset
         vm.expectRevert(Errors.PriceOracle_InvalidConfiguration.selector);
-        new YearnVaultOracle(address(vault), address(0), USD, MAX_STALENESS);
+        new YearnVaultOracle(address(vault), address(0), USD);
 
         // Test zero USD
         vm.expectRevert(Errors.PriceOracle_InvalidConfiguration.selector);
-        new YearnVaultOracle(address(vault), address(asset), address(0), MAX_STALENESS);
+        new YearnVaultOracle(address(vault), address(asset), address(0));
+    }
+
+    function test_Constructor_RevertBrokenDecimals() public {
+        MockBrokenDecimals broken = new MockBrokenDecimals();
+        vm.expectRevert(abi.encodeWithSelector(Errors.PriceOracle_DecimalsNotSupported.selector, address(broken)));
+        new YearnVaultOracle(address(broken), address(asset), USD);
+    }
+
+    function test_Constructor_RevertZeroDecimals() public {
+        MockZeroDecimals zeroDecimals = new MockZeroDecimals();
+        vm.expectRevert(
+            abi.encodeWithSelector(Errors.PriceOracle_DecimalsNotSupported.selector, address(zeroDecimals))
+        );
+        new YearnVaultOracle(address(zeroDecimals), address(asset), USD);
+    }
+
+    function test_Constructor_RevertExcessiveDecimals() public {
+        MockExcessiveDecimals excessiveDecimals = new MockExcessiveDecimals();
+        vm.expectRevert(
+            abi.encodeWithSelector(Errors.PriceOracle_DecimalsNotSupported.selector, address(excessiveDecimals))
+        );
+        new YearnVaultOracle(address(excessiveDecimals), address(asset), USD);
+    }
+
+    function test_Constructor_RevertAssetBrokenDecimals() public {
+        MockBrokenDecimals brokenAsset = new MockBrokenDecimals();
+        vm.expectRevert(
+            abi.encodeWithSelector(Errors.PriceOracle_DecimalsNotSupported.selector, address(brokenAsset))
+        );
+        new YearnVaultOracle(address(vault), address(brokenAsset), USD);
+    }
+
+    function test_Constructor_RevertVaultAssetMismatch() public {
+        // Create a vault with correct asset set
+        MockYearnVault vaultWithAsset = new MockYearnVault(1e18, 18);
+        vaultWithAsset.setUnderlyingAsset(address(asset));
+
+        // Create a different asset
+        MockToken wrongAsset = new MockToken(18);
+
+        // Should revert when provided asset doesn't match vault's asset
+        vm.expectRevert(
+            abi.encodeWithSelector(Errors.PriceOracle_VaultAssetMismatch.selector, address(asset), address(wrongAsset))
+        );
+        new YearnVaultOracle(address(vaultWithAsset), address(wrongAsset), USD);
+    }
+
+    function test_Constructor_ERC4626VaultSuccess() public {
+        // Create ERC4626-style vault with matching asset
+        MockERC4626Vault erc4626Vault = new MockERC4626Vault(1e18, 18, address(asset));
+
+        // Should succeed when asset matches
+        YearnVaultOracle newOracle = new YearnVaultOracle(address(erc4626Vault), address(asset), USD);
+        assertEq(newOracle.vault(), address(erc4626Vault));
+        assertEq(newOracle.asset(), address(asset));
+    }
+
+    function test_Constructor_ERC4626VaultMismatch() public {
+        MockToken wrongAsset = new MockToken(18);
+        MockERC4626Vault erc4626Vault = new MockERC4626Vault(1e18, 18, address(asset));
+
+        // Should revert when asset doesn't match
+        vm.expectRevert(
+            abi.encodeWithSelector(Errors.PriceOracle_VaultAssetMismatch.selector, address(asset), address(wrongAsset))
+        );
+        new YearnVaultOracle(address(erc4626Vault), address(wrongAsset), USD);
+    }
+
+    function test_Constructor_RevertCannotVerifyAsset() public {
+        // Create vault without token() or asset() methods
+        MockVaultNoAssetMethod vaultNoAsset = new MockVaultNoAssetMethod(1e18, 18);
+
+        // Should revert when cannot verify asset
+        vm.expectRevert(Errors.PriceOracle_CannotVerifyAsset.selector);
+        new YearnVaultOracle(address(vaultNoAsset), address(asset), USD);
+    }
+
+    function test_Constructor_MaliciousHugeSymbol() public {
+        // Create malicious vault that returns 1MB of data for symbol()
+        MaliciousHugeSymbol malicious = new MaliciousHugeSymbol();
+
+        // Should not revert, should use default "VAULT" symbol
+        YearnVaultOracle newOracle = new YearnVaultOracle(address(malicious), address(asset), USD);
+
+        // Verify it used the default symbol
+        assertEq(newOracle.name(), "YearnVaultOracle VAULT/USD");
+    }
+
+    function test_Constructor_MaliciousLongString() public {
+        // Create malicious vault that returns 100-char string (exceeds 32 limit)
+        MaliciousLongString malicious = new MaliciousLongString();
+
+        // Should not revert, should use default "VAULT" symbol
+        YearnVaultOracle newOracle = new YearnVaultOracle(address(malicious), address(asset), USD);
+
+        // Verify it used the default symbol
+        assertEq(newOracle.name(), "YearnVaultOracle VAULT/USD");
+    }
+
+    function test_Constructor_BrokenSymbol() public {
+        // Create vault with broken symbol() that reverts
+        MaliciousBrokenSymbol malicious = new MaliciousBrokenSymbol();
+
+        // Should not revert, should use default "VAULT" symbol
+        YearnVaultOracle newOracle = new YearnVaultOracle(address(malicious), address(asset), USD);
+
+        // Verify it used the default symbol
+        assertEq(newOracle.name(), "YearnVaultOracle VAULT/USD");
     }
 
     function test_GetQuote_VaultToUSD() public {
@@ -209,14 +422,16 @@ contract YearnVaultOracleDecimalsTest is Test {
 
     address constant MOCK_ASSET = address(0x1111);
     address constant USD = 0x0000000000000000000000000000000000000348;
-    uint256 constant MAX_STALENESS = 24 hours;
 
     function test_DifferentDecimals_6DecimalVault() public {
         // Create vault with 6 decimals (like USDC)
         MockYearnVault vault6 = new MockYearnVault(1e6, 6); // 1:1 price, 6 decimals
         MockToken asset6 = new MockToken(6);
 
-        oracle = new YearnVaultOracle(address(vault6), address(asset6), USD, MAX_STALENESS);
+        // Set vault's underlying asset
+        vault6.setUnderlyingAsset(address(asset6));
+
+        oracle = new YearnVaultOracle(address(vault6), address(asset6), USD);
 
         // Set price per share
         vault6.setPricePerShare(1.5e6); // 1.5 in 6 decimals
@@ -232,7 +447,10 @@ contract YearnVaultOracleDecimalsTest is Test {
         MockYearnVault vault8 = new MockYearnVault(1e8, 8);
         MockToken asset8 = new MockToken(8);
 
-        oracle = new YearnVaultOracle(address(vault8), address(asset8), USD, MAX_STALENESS);
+        // Set vault's underlying asset
+        vault8.setUnderlyingAsset(address(asset8));
+
+        oracle = new YearnVaultOracle(address(vault8), address(asset8), USD);
 
         // Set price per share
         vault8.setPricePerShare(2e8); // 2.0 in 8 decimals
