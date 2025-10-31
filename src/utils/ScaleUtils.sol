@@ -77,12 +77,26 @@ library ScaleUtils {
     {
         uint256 priceScale = Scale.unwrap(scale) & PRICE_SCALE_MASK;
         uint256 feedScale = Scale.unwrap(scale) >> 128;
+
+        // If doing inverse pricing, unitPrice cannot be zero (would divide by zero).
+        if (inverse && unitPrice == 0) {
+            revert Errors.PriceOracle_ZeroPrice();
+        }
+
+        // Prevent 256-bit overflow when computing priceScale * unitPrice.
+        // priceScale is constrained by MAX_EXPONENT (<= 10**38), but unitPrice comes from an external feed.
+        if (unitPrice != 0 && priceScale > type(uint256).max / unitPrice) {
+            revert Errors.PriceOracle_Overflow();
+        }
+
+        uint256 priceTimes = priceScale * unitPrice; // safe after the check above
+
         if (inverse) {
             // (inAmount * feedScale) / (priceScale * unitPrice)
-            return FixedPointMathLib.fullMulDiv(inAmount, feedScale, priceScale * unitPrice);
+            return FixedPointMathLib.fullMulDiv(inAmount, feedScale, priceTimes);
         } else {
             // (inAmount * priceScale * unitPrice) / feedScale
-            return FixedPointMathLib.fullMulDiv(inAmount, priceScale * unitPrice, feedScale);
+            return FixedPointMathLib.fullMulDiv(inAmount, priceTimes, feedScale);
         }
     }
 }
