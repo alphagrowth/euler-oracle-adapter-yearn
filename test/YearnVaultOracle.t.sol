@@ -42,7 +42,6 @@ contract YearnVaultOracleTest is Test {
 
     address constant MOCK_ASSET = address(0x1111);
     address constant USD = 0x0000000000000000000000000000000000000348;
-    uint256 constant MAX_STALENESS = 24 hours;
 
     function setUp() public {
         // Deploy mock contracts
@@ -50,49 +49,28 @@ contract YearnVaultOracleTest is Test {
         asset = new MockToken(18); // 18 decimals for asset
 
         // Deploy the oracle using the actual asset contract address
-        oracle = new YearnVaultOracle(address(vault), address(asset), USD, MAX_STALENESS);
+        oracle = new YearnVaultOracle(address(vault), address(asset), USD);
     }
 
     function test_Constructor() public view {
         assertEq(oracle.vault(), address(vault));
         assertEq(oracle.asset(), address(asset));
         assertEq(oracle.usd(), USD);
-        assertEq(oracle.maxStaleness(), MAX_STALENESS);
         assertEq(oracle.name(), "YearnVaultOracle yTEST/USD");
-    }
-
-    function test_Constructor_RevertInvalidStaleness() public {
-        // Test staleness too low
-        vm.expectRevert(Errors.PriceOracle_InvalidConfiguration.selector);
-        new YearnVaultOracle(
-            address(vault),
-            address(asset),
-            USD,
-            30 seconds // Below minimum
-        );
-
-        // Test staleness too high
-        vm.expectRevert(Errors.PriceOracle_InvalidConfiguration.selector);
-        new YearnVaultOracle(
-            address(vault),
-            address(asset),
-            USD,
-            27 hours // Above maximum
-        );
     }
 
     function test_Constructor_RevertZeroAddress() public {
         // Test zero vault
         vm.expectRevert(Errors.PriceOracle_InvalidConfiguration.selector);
-        new YearnVaultOracle(address(0), address(asset), USD, MAX_STALENESS);
+        new YearnVaultOracle(address(0), address(asset), USD);
 
         // Test zero asset
         vm.expectRevert(Errors.PriceOracle_InvalidConfiguration.selector);
-        new YearnVaultOracle(address(vault), address(0), USD, MAX_STALENESS);
+        new YearnVaultOracle(address(vault), address(0), USD);
 
         // Test zero USD
         vm.expectRevert(Errors.PriceOracle_InvalidConfiguration.selector);
-        new YearnVaultOracle(address(vault), address(asset), address(0), MAX_STALENESS);
+        new YearnVaultOracle(address(vault), address(asset), address(0));
     }
 
     function test_GetQuote_VaultToUSD() public {
@@ -209,14 +187,13 @@ contract YearnVaultOracleDecimalsTest is Test {
 
     address constant MOCK_ASSET = address(0x1111);
     address constant USD = 0x0000000000000000000000000000000000000348;
-    uint256 constant MAX_STALENESS = 24 hours;
 
     function test_DifferentDecimals_6DecimalVault() public {
         // Create vault with 6 decimals (like USDC)
         MockYearnVault vault6 = new MockYearnVault(1e6, 6); // 1:1 price, 6 decimals
         MockToken asset6 = new MockToken(6);
 
-        oracle = new YearnVaultOracle(address(vault6), address(asset6), USD, MAX_STALENESS);
+        oracle = new YearnVaultOracle(address(vault6), address(asset6), USD);
 
         // Set price per share
         vault6.setPricePerShare(1.5e6); // 1.5 in 6 decimals
@@ -232,7 +209,7 @@ contract YearnVaultOracleDecimalsTest is Test {
         MockYearnVault vault8 = new MockYearnVault(1e8, 8);
         MockToken asset8 = new MockToken(8);
 
-        oracle = new YearnVaultOracle(address(vault8), address(asset8), USD, MAX_STALENESS);
+        oracle = new YearnVaultOracle(address(vault8), address(asset8), USD);
 
         // Set price per share
         vault8.setPricePerShare(2e8); // 2.0 in 8 decimals

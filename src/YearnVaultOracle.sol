@@ -10,12 +10,9 @@ import { Errors } from "./utils/Errors.sol";
 /// @author AlphaGrowth (https://alphagrowth.io)
 /// @notice Direct price oracle adapter for Yearn vault tokens with fixed-rate underlying assets
 /// @dev Uses vault's pricePerShare directly without additional translation for assets pegged to USD
+/// @dev WARNING: This oracle relies on Yearn vault's pricePerShare() for freshness. There is no staleness
+///      check implemented. The oracle assumes Yearn vaults update their pricePerShare regularly.
 contract YearnVaultOracle is IPriceOracle {
-    /// @notice The minimum permitted value for maxStaleness
-    uint256 internal constant MAX_STALENESS_LOWER_BOUND = 1 minutes;
-    /// @notice The maximum permitted value for maxStaleness
-    uint256 internal constant MAX_STALENESS_UPPER_BOUND = 26 hours;
-
     /// @inheritdoc IPriceOracle
     string public name;
 
@@ -29,19 +26,13 @@ contract YearnVaultOracle is IPriceOracle {
     IYearnVault public immutable yearnVault;
     /// @notice The scale for decimal conversions
     Scale public immutable scale;
-    /// @notice The maximum allowed age of the oracle price
-    uint256 public immutable maxStaleness;
 
     /// @notice Deploy a YearnVaultOracle
     /// @param _vault The address of the Yearn vault token
     /// @param _asset The underlying asset of the vault (should be pegged to USD)
     /// @param _usd The address representing USD
-    /// @param _maxStaleness The maximum allowed age for price data in seconds
-    constructor(address _vault, address _asset, address _usd, uint256 _maxStaleness) {
+    constructor(address _vault, address _asset, address _usd) {
         // Validate configuration
-        if (_maxStaleness < MAX_STALENESS_LOWER_BOUND || _maxStaleness > MAX_STALENESS_UPPER_BOUND) {
-            revert Errors.PriceOracle_InvalidConfiguration();
-        }
         if (_vault == address(0) || _asset == address(0) || _usd == address(0)) {
             revert Errors.PriceOracle_InvalidConfiguration();
         }
@@ -51,7 +42,6 @@ contract YearnVaultOracle is IPriceOracle {
         asset = _asset;
         usd = _usd;
         yearnVault = IYearnVault(_vault);
-        maxStaleness = _maxStaleness;
 
         // Get decimals for all tokens
         uint8 vaultDecimals = _getDecimals(_vault);
