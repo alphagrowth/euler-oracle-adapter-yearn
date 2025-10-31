@@ -30,7 +30,7 @@ contract YearnVaultOracleForkTest is Test {
         usndOracle = IPriceOracle(USND_ORACLE);
 
         // Deploy the oracle (direct pricing, no USND oracle needed)
-        oracle = new YearnVaultOracle(YUSND, USND, USD, 24 hours);
+        oracle = new YearnVaultOracle(YUSND, USND, USD);
 
         console2.log("Oracle deployed at:", address(oracle));
         console2.log("Oracle name:", oracle.name());
@@ -40,7 +40,6 @@ contract YearnVaultOracleForkTest is Test {
         assertEq(oracle.vault(), YUSND);
         assertEq(oracle.asset(), USND);
         assertEq(oracle.usd(), USD);
-        assertEq(oracle.maxStaleness(), 24 hours);
     }
 
     function test_Fork_GetYUSNDPricePerShare() public view {

@@ -8,12 +8,12 @@ import { YearnVaultOracle } from "../src/YearnVaultOracle.sol";
 /// @author AlphaGrowth (https://www.alphagrowth.io/)
 /// @notice Deployment script for yUSND/USD direct oracle on Arbitrum
 /// @dev Uses YearnVaultOracle for direct pricing (no asset translation needed since USND is 1:1 with USD)
+/// @dev WARNING: This oracle relies on Yearn vault's pricePerShare() for freshness with no staleness checks
 contract DeployYUSNDOracleDirect is Script {
     // Configuration for yUSND on Arbitrum
     address constant VAULT = 0x252b965400862d94BDa35FeCF7Ee0f204a53Cc36; // yUSND
     address constant ASSET = 0x4ecf61a6c2FaB8A047CEB3B3B263B401763e9D49; // USND (pegged 1:1 to USD)
     address constant USD = 0x0000000000000000000000000000000000000348; // USD
-    uint256 constant MAX_STALENESS = 24 hours;
 
     function run() external {
         console2.log("========================================");
@@ -23,14 +23,14 @@ contract DeployYUSNDOracleDirect is Script {
         console2.log("  Vault (yUSND):", VAULT);
         console2.log("  Asset (USND):", ASSET);
         console2.log("  USD:", USD);
-        console2.log("  Max Staleness:", MAX_STALENESS);
         console2.log("");
         console2.log("Note: Using direct oracle since USND is pegged 1:1 with USD");
         console2.log("This saves gas by eliminating the need for asset price translation");
+        console2.log("WARNING: Oracle relies on Yearn's pricePerShare freshness - no staleness checks");
 
         vm.startBroadcast();
 
-        YearnVaultOracle oracle = new YearnVaultOracle(VAULT, ASSET, USD, MAX_STALENESS);
+        YearnVaultOracle oracle = new YearnVaultOracle(VAULT, ASSET, USD);
 
         vm.stopBroadcast();
 
