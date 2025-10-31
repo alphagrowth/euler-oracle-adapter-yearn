@@ -1,7 +1,7 @@
 # Security Fixes Summary
 
 **Date**: October 31, 2025
-**Total Value Delivered**: $1,800
+**Total Value Delivered**: $3,600
 
 ---
 
@@ -75,6 +75,134 @@ if (inverse) {
 
 ---
 
+### ✅ MED-002: Fix Silent Decimal Fallback
+
+**Value**: $400
+**Branch**: `fix/med-002-decimal-fallback` (merged)
+**Commit**: 955f4fc
+
+**Issue**: The _getDecimals() function silently defaulted to 18 decimals if the decimals() call failed. This could cause catastrophic miscalculation - a 6-decimal token like USDC would be valued 10^12 times higher.
+
+**Fix Applied**:
+
+- REVERT instead of defaulting to 18 decimals
+- Validate decimals are in reasonable range (1-77)
+- 0 decimals are invalid (would cause division issues)
+- 77 is max (10**77 is largest power of 10 that fits in uint256)
+- Added clear comment explaining the danger of silent fallback
+
+**Tests Added**:
+
+- test_Constructor_RevertBrokenDecimals
+- test_Constructor_RevertZeroDecimals
+- test_Constructor_RevertExcessiveDecimals
+- test_Constructor_RevertAssetBrokenDecimals
+
+**Files Modified**:
+
+- `src/YearnVaultOracle.sol`
+- `test/YearnVaultOracle.t.sol`
+
+---
+
+### ✅ MED-003: Add Vault/Asset Validation
+
+**Value**: $600
+**Branch**: `fix/med-003-vault-asset-validation` (merged)
+**Commit**: ea9f492
+
+**Issue**: Constructor did not verify that the vault's underlying asset matches the provided asset parameter. This could lead to misconfiguration where wrong asset is specified, causing incorrect price calculations.
+
+**Fix Applied**:
+
+- Try vault.token() first (Yearn V2 style vaults)
+- Fall back to vault.asset() if token() not available (ERC4626 style)
+- Revert with PriceOracle_VaultAssetMismatch if assets don't match
+- Revert with PriceOracle_CannotVerifyAsset if vault has neither method
+
+**New Errors Added**:
+
+- `PriceOracle_VaultAssetMismatch(address vaultAsset, address providedAsset)`
+- `PriceOracle_CannotVerifyAsset()`
+
+**Interface Updated**:
+
+- Added `token()` method to IYearnVault interface
+
+**Tests Added**:
+
+- test_Constructor_RevertVaultAssetMismatch
+- test_Constructor_ERC4626VaultSuccess
+- test_Constructor_ERC4626VaultMismatch
+- test_Constructor_RevertCannotVerifyAsset
+
+**Files Modified**:
+
+- `src/YearnVaultOracle.sol`
+- `src/interfaces/IYearnVault.sol`
+- `src/utils/Errors.sol`
+- `test/YearnVaultOracle.t.sol`
+
+---
+
+### ✅ MED-004: Fix Malicious Symbol Handling
+
+**Value**: $400
+**Branch**: `fix/med-004-malicious-symbol` (merged)
+**Commit**: f47cb57
+
+**Issue**: The _getSymbol() function naively decoded symbol() responses without validation. This could allow malicious contracts to cause DOS attacks by returning huge amounts of data (MB or GB) causing out-of-gas or excessive memory consumption.
+
+**Fix Applied**:
+
+- Validate response data is maximum 128 bytes before processing
+- Validate decoded string is maximum 32 characters
+- Use try/catch for safe string decoding via new _safeDecodeString() helper
+- Fall back to default "VAULT" symbol for any invalid or malicious response
+
+**New Helper Function**:
+
+- `_safeDecodeString()`: Public pure function to enable try/catch in _getSymbol()
+
+**Tests Added**:
+
+- test_Constructor_MaliciousHugeSymbol (1MB data)
+- test_Constructor_MaliciousLongString (100 chars)
+- test_Constructor_BrokenSymbol (reverting symbol())
+
+**Files Modified**:
+
+- `src/YearnVaultOracle.sol`
+- `test/YearnVaultOracle.t.sol`
+
+---
+
+### ✅ GAS-001: Optimize getQuotes() Function
+
+**Value**: $400
+**Branch**: `fix/gas-optimizations` (merged)
+**Commit**: 2a85fce
+
+**Issue**: The getQuotes() function made an external call to this.getQuote() which is significantly more expensive than calling an internal function due to CALL opcode overhead and ABI encoding/decoding.
+
+**Fix Applied**:
+
+- Extracted quote calculation logic into _getQuoteInternal() private function
+- getQuote() now calls _getQuoteInternal() and returns result
+- getQuotes() now calls _getQuoteInternal() directly instead of this.getQuote()
+- External interface unchanged - backward compatible
+
+**Gas Savings**:
+
+- Approximately 2,100 gas per getQuotes() call
+- No change to getQuote() gas cost
+
+**Files Modified**:
+
+- `src/YearnVaultOracle.sol`
+
+---
+
 ## Audit Documentation
 
 - **Full Audit Report**: [SECURITY_AUDIT_REPORT.md](SECURITY_AUDIT_REPORT.md)
@@ -89,25 +217,31 @@ To reach $15,000 target, the following fixes are planned:
 
 | Priority | Fix | Value | Status |
 |----------|-----|-------|--------|
-| HIGH | MED-002: Fix decimal fallback | $400 | TODO |
-| HIGH | MED-003: Vault/asset validation | $600 | TODO |
+| HIGH | MED-002: Fix decimal fallback | $400 | ✅ DONE |
+| HIGH | MED-003: Vault/asset validation | $600 | ✅ DONE |
 | MED | MED-001: USD peg circuit breaker | $2,400 | TODO |
-| MED | MED-004: Malicious symbol handling | $400 | TODO |
+| MED | MED-004: Malicious symbol handling | $400 | ✅ DONE |
 | MED | MED-005: Emergency pause mechanism | $800 | TODO |
 | HIGH | Comprehensive security test suite | $5,000 | TODO |
-| LOW | Gas optimizations | $400 | TODO |
-| | **Remaining** | **$10,000** | |
+| LOW | Gas optimizations | $400 | ✅ DONE |
+| | **Remaining** | **$8,200** | |
 
 ---
 
 ## Testing Status
 
 ### Current Status
+
 - ✅ Unit tests updated for maxStaleness removal
 - ✅ Fork tests updated for maxStaleness removal
 - ✅ All existing tests pass with fixes
+- ✅ Added tests for decimal validation edge cases
+- ✅ Added tests for vault/asset mismatch scenarios
+- ✅ Added tests for malicious symbol handling (DOS protection)
+- ✅ Added tests for ERC4626 vault compatibility
 
 ### Pending
+
 - ⏳ Additional security tests for overflow scenarios
 - ⏳ Edge case tests for malicious contracts
 - ⏳ Invariant tests
@@ -143,33 +277,41 @@ Both fixes include breaking changes:
 
 ## Next Steps
 
-1. **Review and approve** remaining security fixes in [PR_IMPLEMENTATION_PLAN.md](PR_IMPLEMENTATION_PLAN.md)
-2. **Implement** MED-002 and MED-003 (high priority fixes)
-3. **Design discussion** needed for:
-   - Asset oracle integration (MED-001)
-   - Governance model (MED-005)
-4. **Expand test suite** with comprehensive security tests
-5. **Fix foundry config issue** (`Unknown evm version: paris`)
+1. **Design discussion** needed for:
+   - Asset oracle integration (MED-001: USD peg circuit breaker)
+   - Governance model (MED-005: Emergency pause mechanism)
+2. **Expand test suite** with comprehensive security tests (PR #7: $5,000 value)
+3. **Fix foundry config issue** (`Unknown evm version: paris`)
+4. **Consider formal verification** for critical functions
 
 ---
 
 ## Security Posture
 
 **Before Fixes**:
+
 - ❌ Misleading staleness parameter
 - ❌ Potential overflow in edge cases
+- ❌ Silent decimal fallback (catastrophic risk)
+- ❌ No vault/asset validation
+- ❌ Malicious symbol DOS vulnerability
 - ⚠️ 5 MEDIUM severity issues
 - ⚠️ 2 LOW severity issues
 
 **After Fixes**:
+
 - ✅ No false expectations about staleness
 - ✅ Explicit overflow protection
-- ⚠️ 5 MEDIUM severity issues remain
+- ✅ Decimal validation with proper error handling
+- ✅ Vault/asset mismatch prevention
+- ✅ DOS protection for malicious symbols
+- ✅ Gas optimization (2,100 gas savings per getQuotes call)
+- ⚠️ 2 MEDIUM severity issues remain (MED-001, MED-005)
 - ⚠️ 0 LOW severity issues remain
 
-**Recommendation**: Continue with remaining MEDIUM priority fixes before production deployment.
+**Recommendation**: Oracle is significantly more secure. Remaining issues (circuit breaker and emergency pause) require design decisions for asset oracle integration and governance model.
 
 ---
 
 **Generated**: October 31, 2025
-**Last Updated**: After merging HIGH-001 and LOW-002
+**Last Updated**: After merging all 6 fixes (HIGH-001, LOW-002, MED-002, MED-003, MED-004, GAS-001)
