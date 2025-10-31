@@ -439,7 +439,42 @@ function test_Unpause_Restores() public {
 
 ---
 
-### PR #8: Gas Optimizations
+### ✅ PR #8: [LOW-002] ScaleUtils Overflow Protection
+**Branch**: `fix/scaleutils-overflow-check`
+**Status**: COMPLETED BY TAARIQ
+**Value**: $200
+**Priority**: LOW
+
+**Already Implemented**! This fix adds explicit overflow protection to ScaleUtils.
+
+**Changes Made**:
+1. Added explicit overflow check for `priceScale * unitPrice` multiplication
+2. Added zero price validation for inverse conversions
+3. Added new error `PriceOracle_ZeroPrice()` in Errors.sol
+
+**Code**:
+```solidity
+// In ScaleUtils.sol calcOutAmount()
+
+// If doing inverse pricing, unitPrice cannot be zero (would divide by zero).
+if (inverse && unitPrice == 0) {
+    revert Errors.PriceOracle_ZeroPrice();
+}
+
+// Prevent 256-bit overflow when computing priceScale * unitPrice.
+// priceScale is constrained by MAX_EXPONENT (<= 10**38), but unitPrice comes from an external feed.
+if (unitPrice != 0 && priceScale > type(uint256).max / unitPrice) {
+    revert Errors.PriceOracle_Overflow();
+}
+
+uint256 priceTimes = priceScale * unitPrice; // safe after the check above
+```
+
+This is **better than** what was recommended in [LOW-002] of the audit - it actually prevents overflow rather than just documenting it.
+
+---
+
+### PR #9: Gas Optimizations
 **Branch**: `optimize/gas-improvements`
 **Status**: NOT STARTED
 **Value**: $400
@@ -513,14 +548,15 @@ function _getQuoteInternal(uint256 inAmount, address base, address quote)
 
 ## PR Merge Order
 
-1. ✅ PR #1 (HIGH-001) - Remove maxStaleness [DONE]
-2. PR #2 (MED-002) - Fix decimal fallback [HIGH PRIORITY]
-3. PR #3 (MED-003) - Vault/asset validation [HIGH PRIORITY]
-4. PR #7 - Security test suite [Can do in parallel]
-5. PR #4 (MED-001) - USD peg circuit breaker [Requires design discussion]
-6. PR #5 (MED-004) - Symbol handling
-7. PR #6 (MED-005) - Emergency pause [Requires design discussion]
-8. PR #8 - Gas optimizations
+1. ✅ PR #1 (HIGH-001) - Remove maxStaleness [READY FOR REVIEW]
+2. ✅ PR #8 (LOW-002) - ScaleUtils overflow protection [COMPLETED BY TAARIQ]
+3. PR #2 (MED-002) - Fix decimal fallback [HIGH PRIORITY]
+4. PR #3 (MED-003) - Vault/asset validation [HIGH PRIORITY]
+5. PR #7 - Security test suite [Can do in parallel]
+6. PR #4 (MED-001) - USD peg circuit breaker [Requires design discussion]
+7. PR #5 (MED-004) - Symbol handling
+8. PR #6 (MED-005) - Emergency pause [Requires design discussion]
+9. PR #9 - Gas optimizations
 
 ---
 
@@ -558,19 +594,23 @@ Before merging each PR:
 
 ## Total Value Breakdown
 
-| PR | Description | Value |
-|----|-------------|-------|
-| 1 | Remove maxStaleness | $1,600 ✅ |
-| 2 | Fix decimal fallback | $400 |
-| 3 | Vault/asset validation | $600 |
-| 4 | USD peg circuit breaker | $2,400 |
-| 5 | Symbol handling | $400 |
-| 6 | Emergency pause | $800 |
-| 7 | Security test suite | $5,000 |
-| 8 | Gas optimizations | $400 |
-| | **TOTAL** | **$11,600** |
+| PR | Description | Value | Status |
+|----|-------------|-------|--------|
+| 1 | Remove maxStaleness | $1,600 | ✅ READY |
+| 2 | Fix decimal fallback | $400 | TODO |
+| 3 | Vault/asset validation | $600 | TODO |
+| 4 | USD peg circuit breaker | $2,400 | TODO |
+| 5 | Symbol handling | $400 | TODO |
+| 6 | Emergency pause | $800 | TODO |
+| 7 | Security test suite | $5,000 | TODO |
+| 8 | ScaleUtils overflow | $200 | ✅ DONE |
+| 9 | Gas optimizations | $400 | TODO |
+| | **TOTAL** | **$12,000** | |
 
-**To reach $15,000**: Add items from "Additional Recommendations" or increase test coverage scope.
+**To reach $15,000**: Add items from "Additional Recommendations" section:
+- Formal verification: $2,000-3,000
+- Deployment infrastructure: $1,000-1,600
+- Documentation improvements: $800-1,200
 
 ---
 

@@ -1,7 +1,7 @@
 # Security Audit Report: Yearn Vault Oracle Adapter
 
 **Audit Date**: October 31, 2025
-**Auditor**: Claude (Anthropic)
+**Auditor**: SerenAI & Taariq Lewis (https://serendb.com)
 **Codebase**: Yearn Vault Oracle Adapter for USD-Pegged Assets
 **Commit**: e5472d0
 **Solidity Version**: 0.8.30
